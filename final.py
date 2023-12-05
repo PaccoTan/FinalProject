@@ -1,4 +1,3 @@
-from math import ceil
 import torch
 from model import TCRModel, clf_loss_func
 import torch.nn as nn
@@ -84,7 +83,7 @@ def train(fn,epochs=10,fmodel=None,dev="cuda",lr=1e-3):
             train_set = t1 + t3
         else:
             train_set = t2 + t3
-        loader = torch.utils.data.DataLoader(dataset=train_set[:256], batch_size=128, shuffle=True)
+        loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=128, shuffle=True)
         score = []
         loss2 = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.,3.]).to(dev))
         optimizer = torch.optim.Adam(model.parameters(),
@@ -158,10 +157,6 @@ def pretrain(fn,model=None,epochs=10,dev='cuda',ratio=0.3):
             optimizer.step()
             scores.append(loss.item())
         model.save(fn)
-    plt.xlabel('Iterations')
-    plt.ylabel('Loss')
-    plt.plot(scores)
-    plt.show()
 
 class Classifier(nn.Module):
     def __init__(self):
