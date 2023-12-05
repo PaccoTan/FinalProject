@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 import random
-import matplotlib.pyplot as plt
+from torcheval.metrics import BinaryAUROC
 
 
 def load(file,corrupt=False):
@@ -65,6 +65,8 @@ def train(fn,epochs=10,fmodel=None,dev="cuda",lr=1e-3):
     t2 = train[len(train) // 3:len(train) // 3*2]
     t3 = train[len(train) // 3*2:]
     scores = []
+    roc = []
+    metric = BinaryAUROC(device=dev)
     for k in range(3):
         if fmodel is None:
             model = TCRModel().to(dev)
@@ -82,38 +84,48 @@ def train(fn,epochs=10,fmodel=None,dev="cuda",lr=1e-3):
             train_set = t1 + t3
         else:
             train_set = t2 + t3
-        loader = torch.utils.data.DataLoader(dataset=train_set[:3000], batch_size=128, shuffle=True)
+        loader = torch.utils.data.DataLoader(dataset=train_set[:256], batch_size=128, shuffle=True)
         score = []
-        loss2 = torch.nn.CrossEntropyLoss(weight=torch.tensor([1,5]).to(dev))
+        loss2 = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.,3.]).to(dev))
         optimizer = torch.optim.Adam(model.parameters(),
                                      lr=lr,
                                      weight_decay=1e-8)
         for epoch in range(epochs):
-            if epoch == 25:
-                for param in model.parameters():
-                    param.requires_grad = True
-            loss_epoch = 0
             for batch in loader:
                 out = model(batch[0],batch[1])
                 optimizer.zero_grad()
                 # loss = clf_loss_func(out,batch[2])
+                # loss.mean().backward()
                 loss = loss2(out, batch[2])
                 loss.backward()
                 optimizer.step()
                 score.append(loss.item())
             scores.append(sum(score)/len(score))
         model.save("models/" + fn + str(k) + ".pt")
-        break
-    plt.xlabel('Iterations')
-    plt.ylabel('Loss')
-    plt.plot(scores)
-    plt.show()
-    return train[:3000]
-    # with open("file.txt", 'w') as f:
-    #     for s in scores:
-    #         f.write(str(s) + '\n')
-    #     for s in ce:
-    #         f.write(str(s) + '\n')
+        scores.append("\n")
+    for k in range(3):
+        model = TCRModel().to(dev)
+        model.load("models/" + fn + str(k) + ".pt")
+        model.eval()
+        softmax = torch.nn.Softmax(dim=1)
+        if k == 0:
+            loader = torch.utils.data.DataLoader(dataset=t3, batch_size=128, shuffle=False)
+        elif k == 1:
+            loader = torch.utils.data.DataLoader(dataset=t2, batch_size=128, shuffle=False)
+        else:
+            loader = torch.utils.data.DataLoader(dataset=t1, batch_size=128, shuffle=False)
+        with torch.no_grad():
+            for batch in loader:
+                pred = softmax(model(batch[0],batch[1]))[:,-1]
+                metric.update(pred, batch[2])
+        roc.append(metric.compute())
+    with open("file.txt", 'w') as f:
+        f.write("ROC\n")
+        for s in roc:
+            f.write(str(s) + '\n')
+        f.write("\n\nLoss\n")
+        for s in scores:
+            f.write(str(s) + '\n')
 
 def pretrain(fn,model=None,epochs=10,dev='cuda',ratio=0.3):
     if model is None:
